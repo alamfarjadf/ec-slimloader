@@ -1,27 +1,3 @@
-#[cfg(any(feature = "defmt", feature = "log"))]
-macro_rules! jump_error {
-    ($($arg:tt)*) => {
-        defmt_or_log::error!($($arg)*);
-    };
-}
-
-#[cfg(any(feature = "defmt", feature = "log"))]
-macro_rules! jump_info {
-    ($($arg:tt)*) => {
-        defmt_or_log::info!($($arg)*);
-    };
-}
-
-#[cfg(not(any(feature = "defmt", feature = "log")))]
-macro_rules! jump_error {
-    ($($arg:tt)*) => {};
-}
-
-#[cfg(not(any(feature = "defmt", feature = "log")))]
-macro_rules! jump_info {
-    ($($arg:tt)*) => {};
-}
-
 /// # Safety
 ///
 /// `entry` must be a valid pointer to a loaded, authenticated image in flash.
@@ -36,7 +12,7 @@ pub unsafe fn jump_to_image(entry: *const u32) -> ! {
     // cert header offset must be 4-byte aligned and within image length.
     if image_len < 0x40 || (cert_off & 0x3) != 0 || cert_off >= image_len {
         // Invalid header; halt to avoid jumping to a potentially corrupt image.
-        jump_error!(
+        defmt_or_log::error!(
             "jump: invalid header image_len=0x{:X}, cert_off=0x{:X}",
             image_len,
             cert_off
@@ -46,7 +22,7 @@ pub unsafe fn jump_to_image(entry: *const u32) -> ! {
         }
     }
 
-    jump_info!(
+    defmt_or_log::info!(
         "jump: handoff entry=0x{:08X} image_len=0x{:X} cert_off=0x{:X}",
         entry as u32,
         image_len,
@@ -87,6 +63,6 @@ pub unsafe fn jump_to_image(entry: *const u32) -> ! {
     cortex_m::asm::isb();
 
     // Load MSP/reset from the vector table and transfer control using the standard Cortex-M helper.
-    jump_info!("jump: bootload to 0x{:08X}", entry as u32);
+    defmt_or_log::info!("jump: bootload to 0x{:08X}", entry as u32);
     cortex_m::asm::bootload(entry)
 }

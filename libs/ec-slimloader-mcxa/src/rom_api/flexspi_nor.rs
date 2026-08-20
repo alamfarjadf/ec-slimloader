@@ -1,7 +1,6 @@
-#![allow(clippy::not_unsafe_ptr_arg_deref)]
-// Safety: null, misaligned, invalid inputs or out of bounds references will cause ROM API to return an error code, which is handled by the caller.
+use ec_slimloader::BootError;
+
 use super::Status;
-use crate::error::FlexspiStatus;
 
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -116,7 +115,6 @@ pub enum FlexspiClockConfigMode {
     Ddr = 1,
 }
 
-#[inline(always)]
 pub const fn pack_serial_nor_option0(
     option_size: SerialNorOptionSize,
     device_type: SerialNorDeviceType,
@@ -136,7 +134,6 @@ pub const fn pack_serial_nor_option0(
         | (max_freq as u32)
 }
 
-#[inline(always)]
 pub const fn pack_serial_nor_option1(
     flash_connection: SerialNorFlashConnection,
     dqs_pinmux_group: u32,
@@ -292,68 +289,58 @@ pub struct FlexspiXfer {
 }
 
 #[repr(C)]
-pub(super) struct FlexspiNorFlashDriverRaw {
-    pub version: u32,
-    pub init: unsafe extern "C" fn(instance: u32, cfg: *mut FlexspiNorConfig) -> Status,
-    pub page_program:
-        unsafe extern "C" fn(instance: u32, cfg: *mut FlexspiNorConfig, dst: u32, src: *const u32) -> Status,
-    pub erase_all: unsafe extern "C" fn(instance: u32, cfg: *mut FlexspiNorConfig) -> Status,
-    pub erase: unsafe extern "C" fn(instance: u32, cfg: *mut FlexspiNorConfig, start: u32, len: u32) -> Status,
-    pub erase_sector: unsafe extern "C" fn(instance: u32, cfg: *mut FlexspiNorConfig, addr: u32) -> Status,
-    pub erase_block: unsafe extern "C" fn(instance: u32, cfg: *mut FlexspiNorConfig, addr: u32) -> Status,
-    pub get_config:
+pub struct FlexspiNorFlashDriver {
+    version: u32,
+    init: unsafe extern "C" fn(instance: u32, cfg: *mut FlexspiNorConfig) -> Status,
+    page_program: unsafe extern "C" fn(instance: u32, cfg: *mut FlexspiNorConfig, dst: u32, src: *const u32) -> Status,
+    erase_all: unsafe extern "C" fn(instance: u32, cfg: *mut FlexspiNorConfig) -> Status,
+    erase: unsafe extern "C" fn(instance: u32, cfg: *mut FlexspiNorConfig, start: u32, len: u32) -> Status,
+    erase_sector: unsafe extern "C" fn(instance: u32, cfg: *mut FlexspiNorConfig, addr: u32) -> Status,
+    erase_block: unsafe extern "C" fn(instance: u32, cfg: *mut FlexspiNorConfig, addr: u32) -> Status,
+    get_config:
         unsafe extern "C" fn(instance: u32, cfg: *mut FlexspiNorConfig, opt: *mut SerialNorConfigOption) -> Status,
-    pub read: unsafe extern "C" fn(
+    read: unsafe extern "C" fn(
         instance: u32,
         cfg: *mut FlexspiNorConfig,
         dst: *mut u32,
         start: u32,
         bytes: u32,
     ) -> Status,
-    pub xfer: unsafe extern "C" fn(instance: u32, xfer: *mut FlexspiXfer) -> Status,
-    pub update_lut: unsafe extern "C" fn(instance: u32, seq_index: u32, lut_base: *const u32, num_seq: u32) -> Status,
-    pub set_clock_source: unsafe extern "C" fn(clock_src: u32) -> Status,
-    pub config_clock: unsafe extern "C" fn(instance: u32, freq_option: u32, sample_clk_mode: u32),
-    pub partial_program:
+    xfer: unsafe extern "C" fn(instance: u32, xfer: *mut FlexspiXfer) -> Status,
+    update_lut: unsafe extern "C" fn(instance: u32, seq_index: u32, lut_base: *const u32, num_seq: u32) -> Status,
+    set_clock_source: unsafe extern "C" fn(clock_src: u32) -> Status,
+    config_clock: unsafe extern "C" fn(instance: u32, freq_option: u32, sample_clk_mode: u32),
+    partial_program:
         unsafe extern "C" fn(instance: u32, cfg: *mut FlexspiNorConfig, dst: u32, src: *const u32, len: u32) -> Status,
 }
 
-#[derive(Clone, Copy)]
-pub struct FlexspiNorFlashDriver {
-    raw: &'static FlexspiNorFlashDriverRaw,
-}
-
 impl FlexspiNorFlashDriver {
-    pub(super) const fn from_raw(raw: &'static FlexspiNorFlashDriverRaw) -> Self {
-        Self { raw }
-    }
-
     pub fn version(&self) -> u32 {
-        self.raw.version
+        self.version
     }
 
     pub fn init(&self, instance: u32, cfg: *mut FlexspiNorConfig) -> FlexspiStatus {
-        unsafe { FlexspiStatus::from_raw((self.raw.init)(instance, cfg)) }
+        unsafe { (self.init)(instance, cfg) }.into()
     }
 
     pub fn page_program(&self, instance: u32, cfg: *mut FlexspiNorConfig, dst: u32, src: *const u32) -> FlexspiStatus {
-        unsafe { FlexspiStatus::from_raw((self.raw.page_program)(instance, cfg, dst, src)) }
+        unsafe { (self.page_program)(instance, cfg, dst, src) }.into()
     }
 
     pub fn erase_all(&self, instance: u32, cfg: *mut FlexspiNorConfig) -> FlexspiStatus {
-        unsafe { FlexspiStatus::from_raw((self.raw.erase_all)(instance, cfg)) }
+        unsafe { (self.erase_all)(instance, cfg) }.into()
     }
 
     pub fn erase(&self, instance: u32, cfg: *mut FlexspiNorConfig, start: u32, len: u32) -> FlexspiStatus {
-        unsafe { FlexspiStatus::from_raw((self.raw.erase)(instance, cfg, start, len)) }
+        unsafe { (self.erase)(instance, cfg, start, len) }.into()
     }
 
     pub fn erase_sector(&self, instance: u32, cfg: *mut FlexspiNorConfig, addr: u32) -> FlexspiStatus {
-        unsafe { FlexspiStatus::from_raw((self.raw.erase_sector)(instance, cfg, addr)) }
+        unsafe { (self.erase_sector)(instance, cfg, addr) }.into()
     }
 
     pub fn erase_block(&self, instance: u32, cfg: *mut FlexspiNorConfig, addr: u32) -> FlexspiStatus {
-        unsafe { FlexspiStatus::from_raw((self.raw.erase_block)(instance, cfg, addr)) }
+        unsafe { (self.erase_block)(instance, cfg, addr) }.into()
     }
 
     pub fn get_config(
@@ -362,7 +349,7 @@ impl FlexspiNorFlashDriver {
         cfg: *mut FlexspiNorConfig,
         opt: *mut SerialNorConfigOption,
     ) -> FlexspiStatus {
-        unsafe { FlexspiStatus::from_raw((self.raw.get_config)(instance, cfg, opt)) }
+        unsafe { (self.get_config)(instance, cfg, opt) }.into()
     }
 
     pub fn read(
@@ -373,19 +360,19 @@ impl FlexspiNorFlashDriver {
         start: u32,
         bytes: u32,
     ) -> FlexspiStatus {
-        unsafe { FlexspiStatus::from_raw((self.raw.read)(instance, cfg, dst, start, bytes)) }
+        unsafe { (self.read)(instance, cfg, dst, start, bytes) }.into()
     }
 
     pub fn xfer(&self, instance: u32, xfer: *mut FlexspiXfer) -> FlexspiStatus {
-        unsafe { FlexspiStatus::from_raw((self.raw.xfer)(instance, xfer)) }
+        unsafe { (self.xfer)(instance, xfer) }.into()
     }
 
     pub fn update_lut(&self, instance: u32, seq_index: u32, lut_base: *const u32, num_seq: u32) -> FlexspiStatus {
-        unsafe { FlexspiStatus::from_raw((self.raw.update_lut)(instance, seq_index, lut_base, num_seq)) }
+        unsafe { (self.update_lut)(instance, seq_index, lut_base, num_seq) }.into()
     }
 
     pub fn set_clock_source(&self, clock_src: FlexspiClockSource) -> FlexspiStatus {
-        unsafe { FlexspiStatus::from_raw((self.raw.set_clock_source)(clock_src as u32)) }
+        unsafe { (self.set_clock_source)(clock_src as u32) }.into()
     }
 
     pub fn config_clock(
@@ -394,7 +381,7 @@ impl FlexspiNorFlashDriver {
         freq_option: FlexspiClockConfigFrequency,
         sample_clk_mode: FlexspiClockConfigMode,
     ) {
-        unsafe { (self.raw.config_clock)(instance, freq_option as u32, sample_clk_mode as u32) }
+        unsafe { (self.config_clock)(instance, freq_option as u32, sample_clk_mode as u32) }
     }
 
     pub fn partial_program(
@@ -405,6 +392,75 @@ impl FlexspiNorFlashDriver {
         src: *const u32,
         len: u32,
     ) -> FlexspiStatus {
-        unsafe { FlexspiStatus::from_raw((self.raw.partial_program)(instance, cfg, dst, src, len)) }
+        unsafe { (self.partial_program)(instance, cfg, dst, src, len) }.into()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FlexspiStatus {
+    Success,
+    Fail,
+    InvalidArgument,
+    SequenceExecutionTimeout,
+    InvalidSequence,
+    DeviceTimeout,
+    ProgramFail,
+    EraseSectorFail,
+    EraseAllFail,
+    WaitTimeout,
+    WriteAlignmentError,
+    CommandFailure,
+    SfdpNotFound,
+    UnsupportedSfdpVersion,
+    FlashNotFound,
+    DtrReadDummyProbeFailed,
+    Unknown(u32),
+}
+
+impl From<u32> for FlexspiStatus {
+    fn from(raw: u32) -> Self {
+        match raw {
+            super::KSTATUS_FLEXSPI_SUCCESS => Self::Success,
+            super::KSTATUS_FLEXSPI_FAIL => Self::Fail,
+            super::KSTATUS_FLEXSPI_INVALID_ARGUMENT => Self::InvalidArgument,
+            super::KSTATUS_FLEXSPI_SEQUENCE_EXECUTION_TIMEOUT => Self::SequenceExecutionTimeout,
+            super::KSTATUS_FLEXSPI_INVALID_SEQUENCE => Self::InvalidSequence,
+            super::KSTATUS_FLEXSPI_DEVICE_TIMEOUT => Self::DeviceTimeout,
+            super::KSTATUS_FLEXSPINOR_PROGRAM_FAIL => Self::ProgramFail,
+            super::KSTATUS_FLEXSPINOR_ERASE_SECTOR_FAIL => Self::EraseSectorFail,
+            super::KSTATUS_FLEXSPINOR_ERASE_ALL_FAIL => Self::EraseAllFail,
+            super::KSTATUS_FLEXSPINOR_WAIT_TIMEOUT => Self::WaitTimeout,
+            super::KSTATUS_FLEXSPINOR_WRITE_ALIGNMENT_ERROR => Self::WriteAlignmentError,
+            super::KSTATUS_FLEXSPINOR_COMMAND_FAILURE => Self::CommandFailure,
+            super::KSTATUS_FLEXSPINOR_SFDP_NOT_FOUND => Self::SfdpNotFound,
+            super::KSTATUS_FLEXSPINOR_UNSUPPORTED_SFDP_VERSION => Self::UnsupportedSfdpVersion,
+            super::KSTATUS_FLEXSPINOR_FLASH_NOT_FOUND => Self::FlashNotFound,
+            super::KSTATUS_FLEXSPINOR_DTR_READ_DUMMY_PROBE_FAILED => Self::DtrReadDummyProbeFailed,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+impl From<FlexspiStatus> for BootError {
+    fn from(status: FlexspiStatus) -> BootError {
+        match status {
+            FlexspiStatus::InvalidArgument
+            | FlexspiStatus::InvalidSequence
+            | FlexspiStatus::SfdpNotFound
+            | FlexspiStatus::UnsupportedSfdpVersion => BootError::Markers,
+            FlexspiStatus::WriteAlignmentError => BootError::MemoryRegion,
+            FlexspiStatus::ProgramFail
+            | FlexspiStatus::EraseSectorFail
+            | FlexspiStatus::EraseAllFail
+            | FlexspiStatus::CommandFailure
+            | FlexspiStatus::DtrReadDummyProbeFailed => BootError::Integrity,
+            FlexspiStatus::Fail
+            | FlexspiStatus::Success
+            | FlexspiStatus::SequenceExecutionTimeout
+            | FlexspiStatus::DeviceTimeout
+            | FlexspiStatus::WaitTimeout
+            | FlexspiStatus::FlashNotFound => BootError::IO,
+            _ => BootError::IO,
+        }
     }
 }

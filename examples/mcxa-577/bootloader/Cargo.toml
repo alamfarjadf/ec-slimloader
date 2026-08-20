@@ -5,13 +5,11 @@ edition = "2021"
 license.workspace = true
 
 [features]
-default = ["defmt", "certificate-logging", "verification-logging", "mcxa"]
+default = ["defmt", "mcxa"]
 defmt = ["dep:defmt", "dep:defmt-or-log", "dep:defmt-rtt", "defmt-or-log/defmt"]
 log = ["dep:defmt-or-log", "defmt-or-log/log"]
 mcxa = ["ec-slimloader-mcxa/mcxa5xx"]
 mcxa5xxevk = ["ec-slimloader-mcxa/mcxa5xxevk"]
-certificate-logging = ["ec-slimloader-mcxa/certificate-logging"]
-verification-logging = ["ec-slimloader-mcxa/verification-logging"]
 
 [[bin]]
 name = "bootloader"
