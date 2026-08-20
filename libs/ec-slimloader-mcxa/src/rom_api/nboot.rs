@@ -269,7 +269,6 @@ impl NbootLifecycleState {
 
     /// Returns a monotonic rank for forward-only progression checks.
     /// Higher rank = further along the lifecycle.
-
     pub const fn rank(self) -> u8 {
         match self {
             Self::Develop => 0,
@@ -283,7 +282,6 @@ impl NbootLifecycleState {
     }
 
     /// Returns true if advancing to `next` is a valid forward progression (no regressions, no same state).
-
     pub const fn can_advance_to(self, next: Self) -> bool {
         next.rank() >= self.rank() && (self as u32 != next as u32)
     }

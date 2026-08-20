@@ -85,7 +85,7 @@ fn load_nboot_auth_parms_from_ifr() -> Result<NbootImgAuthParms, ec_slimloader::
 /// Will ONLY authenticate if CMPA secure boot settings is configured correctly, correct key set (as established by the ROTKH values) is used for signing, and the image is properly signed as an HYBRID (ECDSA + ML-DSA) image.
 /// In dev mode, if the RKTH derived from the image does not match the ROTKH in CMPA, it will be copied to the ROTKH to allow authentication to proceed (this allows flexibility in dev mode since keys may not be provisioned yet),
 /// but in production mode, a mismatch will cause authentication to fail (to prevent unauthorized images from being authenticated).
-pub fn verify_authenticity<'d>(image_base: *const u8) -> Result<(), ec_slimloader::BootError> {
+pub fn verify_authenticity(image_base: *const u8) -> Result<(), ec_slimloader::BootError> {
     let mut parms = load_nboot_auth_parms_from_ifr()?;
 
     let n_boot_api = RomApi::get().nboot();
