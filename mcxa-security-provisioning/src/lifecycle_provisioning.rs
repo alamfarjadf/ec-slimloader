@@ -3,16 +3,19 @@ use core::{mem, ptr};
 
 use defmt_or_log::error;
 pub use ec_slimloader_mcxa::lifecycle::{
+    CmpaUpdateConfigData, CnsaLevel, IFRConfigAreaBase, IFRPage, LpWakePolicy, SecureBootLevel, XipImageProtect,
     cmpa_header_marker_is_valid, cnsa_enforced, fast_boot_enabled, hybrid_secure_boot_enforced, is_cfpa_erased,
     is_cmpa_erased, load_cfpa_header_word, load_lifecycle_from_cfpa, load_pqc_rotkh_from_cmpa, load_rotkh_from_cmpa,
-    low_power_authentication_enforced, CmpaUpdateConfigData, CnsaLevel, IFRConfigAreaBase, IFRPage, LpWakePolicy,
-    SecureBootLevel, XipImageProtect,
+    low_power_authentication_enforced,
 };
-use ec_slimloader_mcxa::rom_api::FlashStatus;
 pub use ec_slimloader_mcxa::rom_api::{
-    flash_cfg_for_rom_api, flash_driver, ActualLifecycleState, Bricked, CanAdvanceTo, Develop, Develop2,
-    FailureAnalysis, FlashConfig, InField, InFieldLocked, NbootLifecycleState, NbootRootKeyUsage, OemFieldReturn,
-    FLASH_API_ERASE_KEY,
+    ActualLifecycleState, Bricked, CanAdvanceTo, Develop, Develop2, FLASH_API_ERASE_KEY, FailureAnalysis, FlashConfig,
+    InField, InFieldLocked, NbootLifecycleState, NbootRootKeyUsage, OemFieldReturn,
+};
+use ec_slimloader_mcxa::rom_api::{
+    FlashFfrConfig, FlashModeConfig, FlashRampControlOption, FlashReadDmaccOption, FlashReadEccOption,
+    FlashReadMarginOption, FlashReadSingleWordConfig, FlashSetReadModeConfig, FlashSetWriteModeConfig, FlashStatus,
+    RomApi,
 };
 
 /// Token produced by `verify_lifecycle_transition()'. Carries the verified target
@@ -155,7 +158,7 @@ fn build_cfpa_page_for_cmpa_update() -> Result<[u8; IFRPage::Cfpa.byte_len()], C
                 status,
                 failed_address,
                 failed_data,
-            })
+            });
         }
     };
 
@@ -301,7 +304,7 @@ pub struct CmpaBootCfg1Write {
 impl CmpaBootCfg1Write {
     pub fn to_config_bits(self) -> u32 {
         const MAX_32B_USER_DEFINED_SIZE: u32 = 160; // Max size of user-defined CMPA area when using 32-byte pages, per ROM/API documentation.
-                                                    //  This is the size we use for the entire CMPA since we want to allow full customer usage.
+        //  This is the size we use for the entire CMPA since we want to allow full customer usage.
         (MAX_32B_USER_DEFINED_SIZE << 24)                                        // [31:24] EXT_CMPA_32B_SIZE = 160 (hardcoded)
             // [20:16] FLASH_REMAP_SIZE = 0 (hardcoded; feature unused)
             | ((self.isp_ft_entry  as u32) << 14)              // [15:14]
@@ -582,8 +585,39 @@ fn read_cfpa_page_for_update() -> Result<[u8; IFRPage::Cfpa.byte_len()], CfpaWri
     Ok(page)
 }
 
+/// Used to get the default FlashConfig struct to be inited by flash_init().
+fn flash_cfg_for_rom_api() -> FlashConfig {
+    FlashConfig {
+        pflash_block_base: 0,
+        pflash_total_size: 0,
+        pflash_block_count: 0,
+        pflash_page_size: 0,
+        pflash_sector_size: 0,
+        ffr_config: FlashFfrConfig {
+            ffr_block_base: 0,
+            ffr_total_size: 0,
+            ffr_page_size: 0,
+            sector_size: 0,
+            cfpa_page_version: 0,
+            cfpa_page_offset: 0,
+        },
+        mode_config: FlashModeConfig::new(
+            0,
+            FlashReadSingleWordConfig::new(
+                FlashReadEccOption::On,
+                FlashReadMarginOption::Normal,
+                FlashReadDmaccOption::Disabled,
+            ),
+            FlashSetWriteModeConfig::new(FlashRampControlOption::Reserved, FlashRampControlOption::Reserved),
+            FlashSetReadModeConfig::new(0, 0, 0),
+        ),
+        nboot_ctx: core::ptr::null_mut(),
+        use_ahb_read: true,
+    }
+}
+
 fn write_cfpa_page_to_scratch(page: &[u8; IFRPage::Cfpa.byte_len()]) -> Result<(), CfpaWriteError> {
-    let drv = flash_driver();
+    let drv = RomApi::get().flash();
     let mut cfg = flash_cfg_for_rom_api();
 
     let s = drv.flash_init(&mut cfg);
@@ -827,7 +861,7 @@ where
     if next == NbootLifecycleState::Bricked {
         // Bricking the device is a special case that doesn't require CMPA policy to be valid, since the device will be unusable after this action regardless.
         //erase all internal (todo: external) flash except the sticky locked SBL region.
-        let drv = flash_driver();
+        let drv = RomApi::get().flash();
         let mut cfg = flash_cfg_for_rom_api();
         let s = drv.flash_init(&mut cfg);
 
@@ -959,7 +993,7 @@ pub fn write_cmpa_page_to_scratch(cmpa_page: &[u8; IFRPage::CmpaAll.byte_len()])
 
     let cfpa_page = build_cfpa_page_for_cmpa_update()?;
 
-    let drv = flash_driver();
+    let drv = RomApi::get().flash();
     let mut cfg = flash_cfg_for_rom_api();
 
     let status = drv.flash_init(&mut cfg);
@@ -1118,7 +1152,7 @@ pub fn write_cmpa_core_page_to_scratch(cmpa_page: &[u8; IFRPage::Cmpa.byte_len()
 
     let cfpa_page = build_cfpa_page_for_cmpa_update()?;
 
-    let drv = flash_driver();
+    let drv = RomApi::get().flash();
     let mut cfg = flash_cfg_for_rom_api();
 
     let status = drv.flash_init(&mut cfg);

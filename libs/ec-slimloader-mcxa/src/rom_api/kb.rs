@@ -96,35 +96,26 @@ pub struct KbSessionRef {
 }
 
 #[repr(C)]
-pub(super) struct KBApiDriverRaw {
-    // Initialize KB session.
-    pub kb_init: unsafe extern "C" fn(session: *mut *mut KbSessionRef, options: *const KbOptions) -> Status,
-    // Deinitialize KB session.
-    pub kb_deinit: unsafe extern "C" fn(session: *mut KbSessionRef) -> Status,
-    // Execute KB operation over a data buffer.
-    pub kb_execute: unsafe extern "C" fn(session: *mut KbSessionRef, data: *const u8, dataLength: u32) -> Status,
-}
-
-#[derive(Clone, Copy)]
 pub struct KBApiDriver {
-    raw: &'static KBApiDriverRaw,
+    // Initialize KB session.
+    kb_init: unsafe extern "C" fn(session: *mut *mut KbSessionRef, options: *const KbOptions) -> Status,
+    // Deinitialize KB session.
+    kb_deinit: unsafe extern "C" fn(session: *mut KbSessionRef) -> Status,
+    // Execute KB operation over a data buffer.
+    kb_execute: unsafe extern "C" fn(session: *mut KbSessionRef, data: *const u8, dataLength: u32) -> Status,
 }
 
 impl KBApiDriver {
-    pub(super) const fn from_raw(raw: &'static KBApiDriverRaw) -> Self {
-        Self { raw }
-    }
-
     pub fn kb_init(&self, session: *mut *mut KbSessionRef, options: *const KbOptions) -> KbStatus {
-        unsafe { (self.raw.kb_init)(session, options) }.into()
+        unsafe { (self.kb_init)(session, options) }.into()
     }
 
     pub fn kb_deinit(&self, session: *mut KbSessionRef) -> KbStatus {
-        unsafe { (self.raw.kb_deinit)(session) }.into()
+        unsafe { (self.kb_deinit)(session) }.into()
     }
 
     pub fn kb_execute(&self, session: *mut KbSessionRef, data: *const u8, dataLength: u32) -> KbStatus {
-        unsafe { (self.raw.kb_execute)(session, data, dataLength) }.into()
+        unsafe { (self.kb_execute)(session, data, dataLength) }.into()
     }
 }
 

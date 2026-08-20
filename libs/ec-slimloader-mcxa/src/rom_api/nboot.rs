@@ -365,29 +365,29 @@ impl ActualLifecycleState for Bricked {
 
 // Forward declarations of subtables.
 #[repr(C)]
-pub(super) struct NbootDriverRaw {
+pub struct NbootDriver {
     // Initialize NBOOT context (must be called before other NBOOT APIs).
-    pub nboot_context_init: unsafe extern "C" fn(ctx: *mut NbootCtx) -> NbootStatusProtected,
+    nboot_context_init: unsafe extern "C" fn(ctx: *mut NbootCtx) -> NbootStatusProtected,
     // Deinitialize NBOOT context.
-    pub nboot_context_deinit: unsafe extern "C" fn(ctx: *mut NbootCtx) -> NbootStatusProtected,
+    nboot_context_deinit: unsafe extern "C" fn(ctx: *mut NbootCtx) -> NbootStatusProtected,
     // Set context UUID (bytes; see NXP header for exact semantics).
-    pub nboot_context_set_uuid: unsafe extern "C" fn(ctx: *mut NbootCtx, uuid: *const u8) -> NbootStatusProtected,
+    nboot_context_set_uuid: unsafe extern "C" fn(ctx: *mut NbootCtx, uuid: *const u8) -> NbootStatusProtected,
     // SB4: load/parse manifest.
-    pub nboot_sb4_load_manifest: unsafe extern "C" fn(
+    nboot_sb4_load_manifest: unsafe extern "C" fn(
         ctx: *mut NbootCtx,
         manifest: *const u32,
         parms: *mut NbootSb4LoadManifestParms,
     ) -> NbootStatusProtected,
     // SB4: load next block.
-    pub nboot_sb4_load_block: unsafe extern "C" fn(ctx: *mut NbootCtx, block: *mut u32) -> NbootStatusProtected,
+    nboot_sb4_load_block: unsafe extern "C" fn(ctx: *mut NbootCtx, block: *mut u32) -> NbootStatusProtected,
     // SB4: authenticate & complete check (ROMAPI entry).
-    pub nboot_sb4_check_authenticity_and_completeness_romapi: unsafe extern "C" fn(
+    nboot_sb4_check_authenticity_and_completeness_romapi: unsafe extern "C" fn(
         ctx: *mut NbootCtx,
         address: *const u32,
         parms: *mut NbootSb4LoadManifestParms,
     ) -> NbootStatusProtected,
     // Authenticate image (signature verification result returned via is_signature_verified).
-    pub nboot_img_authenticate_romapi: unsafe extern "C" fn(
+    nboot_img_authenticate_romapi: unsafe extern "C" fn(
         ctx: *mut NbootCtx,
         image_start: *const u8,
         is_signature_verified: *mut NbootBool,
@@ -395,14 +395,14 @@ pub(super) struct NbootDriverRaw {
     ) -> NbootStatusProtected,
 
     // Enable/Configure in-memory encryption for a given address range.
-    pub nboot_mem_crypt_enable_encrypt_for_address_range: unsafe extern "C" fn(
+    nboot_mem_crypt_enable_encrypt_for_address_range: unsafe extern "C" fn(
         ctx: *mut NbootCtx,
         region_number: NbootMemCryptRegion,
         region_config: *mut NbootMemCryptRegionConfig,
         iped_mode_select: NbootMemCryptIpedModeSelect,
     ) -> NbootStatusProtected,
     // Check whether an operation is allowed for an address range and return flags/IV counters.
-    pub nboot_mem_crypt_range_checker: unsafe extern "C" fn(
+    nboot_mem_crypt_range_checker: unsafe extern "C" fn(
         ctx: *mut NbootCtx,
         operation: NbootMemCryptOperation,
         address: u32,
@@ -413,30 +413,21 @@ pub(super) struct NbootDriverRaw {
         npx_erase_check_en: u32,
     ) -> NbootStatusProtected,
     // Enable background hashing (ROM-managed hash engine / DMA channel selection).
-    pub nboot_background_hash_enable:
+    nboot_background_hash_enable:
         unsafe extern "C" fn(ctx: *mut NbootCtx, hash_dma_channel: u32) -> NbootStatusProtected,
 }
 
-#[derive(Clone, Copy)]
-pub struct NbootDriver {
-    raw: &'static NbootDriverRaw,
-}
-
 impl NbootDriver {
-    pub(super) const fn from_raw(raw: &'static NbootDriverRaw) -> Self {
-        Self { raw }
-    }
-
     pub fn nboot_context_init(&self, ctx: *mut NbootCtx) -> NbootStatus {
-        unsafe { (self.raw.nboot_context_init)(ctx) }.into()
+        unsafe { (self.nboot_context_init)(ctx) }.into()
     }
 
     pub fn nboot_context_deinit(&self, ctx: *mut NbootCtx) -> NbootStatus {
-        unsafe { (self.raw.nboot_context_deinit)(ctx) }.into()
+        unsafe { (self.nboot_context_deinit)(ctx) }.into()
     }
 
     pub fn nboot_context_set_uuid(&self, ctx: *mut NbootCtx, uuid: *const u8) -> NbootStatus {
-        unsafe { (self.raw.nboot_context_set_uuid)(ctx, uuid) }.into()
+        unsafe { (self.nboot_context_set_uuid)(ctx, uuid) }.into()
     }
 
     pub fn nboot_sb4_load_manifest(
@@ -445,11 +436,11 @@ impl NbootDriver {
         manifest: *const u32,
         parms: *mut NbootSb4LoadManifestParms,
     ) -> NbootStatus {
-        unsafe { (self.raw.nboot_sb4_load_manifest)(ctx, manifest, parms) }.into()
+        unsafe { (self.nboot_sb4_load_manifest)(ctx, manifest, parms) }.into()
     }
 
     pub fn nboot_sb4_load_block(&self, ctx: *mut NbootCtx, block: *mut u32) -> NbootStatus {
-        unsafe { (self.raw.nboot_sb4_load_block)(ctx, block) }.into()
+        unsafe { (self.nboot_sb4_load_block)(ctx, block) }.into()
     }
 
     pub fn nboot_sb4_check_authenticity_and_completeness_romapi(
@@ -458,7 +449,7 @@ impl NbootDriver {
         address: *const u32,
         parms: *mut NbootSb4LoadManifestParms,
     ) -> NbootStatus {
-        unsafe { (self.raw.nboot_sb4_check_authenticity_and_completeness_romapi)(ctx, address, parms) }.into()
+        unsafe { (self.nboot_sb4_check_authenticity_and_completeness_romapi)(ctx, address, parms) }.into()
     }
 
     pub fn nboot_img_authenticate_romapi(
@@ -468,7 +459,7 @@ impl NbootDriver {
         is_signature_verified: *mut NbootBool,
         parms: *mut NbootImgAuthParms,
     ) -> NbootStatus {
-        unsafe { (self.raw.nboot_img_authenticate_romapi)(ctx, image_start, is_signature_verified, parms) }.into()
+        unsafe { (self.nboot_img_authenticate_romapi)(ctx, image_start, is_signature_verified, parms) }.into()
     }
 
     pub fn nboot_mem_crypt_enable_encrypt_for_address_range(
@@ -479,12 +470,7 @@ impl NbootDriver {
         iped_mode_select: NbootMemCryptIpedModeSelect,
     ) -> NbootStatus {
         unsafe {
-            (self.raw.nboot_mem_crypt_enable_encrypt_for_address_range)(
-                ctx,
-                region_number,
-                region_config,
-                iped_mode_select,
-            )
+            (self.nboot_mem_crypt_enable_encrypt_for_address_range)(ctx, region_number, region_config, iped_mode_select)
         }
         .into()
     }
@@ -502,7 +488,7 @@ impl NbootDriver {
         npx_erase_check_en: u32,
     ) -> NbootStatus {
         unsafe {
-            (self.raw.nboot_mem_crypt_range_checker)(
+            (self.nboot_mem_crypt_range_checker)(
                 ctx,
                 operation,
                 address,
@@ -519,7 +505,7 @@ impl NbootDriver {
     pub fn nboot_background_hash_enable(&self, ctx: *mut NbootCtx, hash_dma_channel: u32) -> NbootStatus {
         // should enum for DMA channel selection be added? (Answer is yes but which channels??) For now just pass 0 for default channel. By doing an enum,
         // we can impose limitations on valid values (e.g. if only 2 channels are supported, etc.)
-        unsafe { (self.raw.nboot_background_hash_enable)(ctx, hash_dma_channel) }.into()
+        unsafe { (self.nboot_background_hash_enable)(ctx, hash_dma_channel) }.into()
     }
 }
 

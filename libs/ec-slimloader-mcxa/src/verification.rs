@@ -5,8 +5,8 @@ use crate::lifecycle::{
     load_pqc_rotkh_from_cmpa, load_root_key_revocation_from_cfpa, load_rotk_usage_from_cmpa, load_rotkh_from_cmpa,
 };
 use crate::rom_api::{
-    nboot, nboot_bool_is_true, NbootBool, NbootBoolValue, NbootCtx, NbootImgAuthParms, NbootLifecycleState,
-    NbootRootKeyRevocation, NbootRootKeyType, NbootRootKeyUsage, NbootRotAuthParms, NbootStatus,
+    nboot_bool_is_true, NbootBool, NbootBoolValue, NbootCtx, NbootImgAuthParms, NbootLifecycleState,
+    NbootRootKeyRevocation, NbootRootKeyType, NbootRootKeyUsage, NbootRotAuthParms, NbootStatus, RomApi,
 };
 
 const DEFAULT_NBOOT_PARMS: NbootImgAuthParms = NbootImgAuthParms {
@@ -88,7 +88,7 @@ fn load_nboot_auth_parms_from_ifr() -> Result<NbootImgAuthParms, ec_slimloader::
 pub fn verify_authenticity<'d>(image_base: *const u8) -> Result<(), ec_slimloader::BootError> {
     let mut parms = load_nboot_auth_parms_from_ifr()?;
 
-    let n_boot_api = nboot();
+    let n_boot_api = RomApi::get().nboot();
     let mut ctx: NbootCtx = unsafe { core::mem::zeroed() };
     let mut sig_ok: NbootBool = NbootBoolValue::False as u32;
 

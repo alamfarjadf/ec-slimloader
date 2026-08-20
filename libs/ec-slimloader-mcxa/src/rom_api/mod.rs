@@ -15,12 +15,6 @@ pub use kb::*;
 pub use nboot::*;
 pub use spi_flash::*;
 
-use self::flash::FlashDriverRaw;
-use self::flexspi_nor::FlexspiNorFlashDriverRaw;
-use self::kb::KBApiDriverRaw;
-use self::nboot::NbootDriverRaw;
-use self::spi_flash::SpiFlashDriverRaw;
-
 pub type Status = u32;
 pub type NbootBool = u32;
 pub type NbootStatusProtected = u64;
@@ -42,75 +36,59 @@ pub union StandardVersion {
 }
 
 #[repr(C)]
-struct RomApiRaw {
+pub struct RomApi {
     // NXP usage: uint32_t arg = ...; g_bootloaderTree->runBootloader(&arg);
     // The ROM API takes a pointer to the argument word (NULL is allowed for default behavior).
-    pub run_bootloader: unsafe extern "C" fn(arg: *const u32),
+    run_bootloader: unsafe extern "C" fn(arg: *const u32),
     // Flash driver interface table.
-    pub flash_api: *const FlashDriverRaw,
-    pub kb_api: *const KBApiDriverRaw,
-    pub nboot_api: *const NbootDriverRaw,
-    pub flex_spi_api: *const FlexspiNorFlashDriverRaw,
-    pub spi_flash_api: *const SpiFlashDriverRaw,
-    pub version: StandardVersion,
-    pub copyright: *const c_char,
-}
-
-#[derive(Clone, Copy)]
-pub struct RomApi {
-    raw: &'static RomApiRaw,
+    flash_api: *const FlashDriver,
+    kb_api: *const KBApiDriver,
+    nboot_api: *const NbootDriver,
+    flex_spi_api: *const FlexspiNorFlashDriver,
+    spi_flash_api: *const SpiFlashDriver,
+    version: StandardVersion,
+    copyright: *const c_char,
 }
 
 impl RomApi {
-    const fn from_raw(raw: &'static RomApiRaw) -> Self {
-        Self { raw }
+    pub fn get() -> &'static Self {
+        const ROM_API_BASE: usize = 0x1303_D800; // from MCXA Reference Manual.
+        let ptr = ROM_API_BASE as *const RomApi;
+
+        unsafe { &*ptr }
     }
 
     pub fn run_bootloader(&self, arg: *const u32) {
-        unsafe { (self.raw.run_bootloader)(arg) }
+        unsafe { (self.run_bootloader)(arg) }
     }
 
-    pub fn flash_api(&self) -> FlashDriver {
-        unsafe { FlashDriver::from_raw(&*self.raw.flash_api) }
+    pub fn flash(&self) -> &'static FlashDriver {
+        unsafe { &*self.flash_api }
     }
 
-    pub fn kb_api(&self) -> KBApiDriver {
-        unsafe { KBApiDriver::from_raw(&*self.raw.kb_api) }
+    pub fn kb(&self) -> &'static KBApiDriver {
+        unsafe { &*self.kb_api }
     }
 
-    pub fn nboot_api(&self) -> NbootDriver {
-        unsafe { NbootDriver::from_raw(&*self.raw.nboot_api) }
+    pub fn nboot(&self) -> &'static NbootDriver {
+        unsafe { &*self.nboot_api }
     }
 
-    pub fn flex_spi_api(&self) -> FlexspiNorFlashDriver {
-        unsafe { FlexspiNorFlashDriver::from_raw(&*self.raw.flex_spi_api) }
+    pub fn flex_spi(&self) -> &'static FlexspiNorFlashDriver {
+        unsafe { &*self.flex_spi_api }
     }
 
-    pub fn spi_flash_api(&self) -> SpiFlashDriver {
-        unsafe { SpiFlashDriver::from_raw(&*self.raw.spi_flash_api) }
+    pub fn spi_flash(&self) -> &'static SpiFlashDriver {
+        unsafe { &*self.spi_flash_api }
     }
 
     pub fn version(&self) -> StandardVersion {
-        self.raw.version
+        self.version
     }
 
     pub fn copyright(&self) -> *const c_char {
-        self.raw.copyright
+        self.copyright
     }
-}
-
-pub type BootloaderTree = RomApi;
-
-pub fn rom_api() -> RomApi {
-    const ROM_API_BASE: usize = 0x1303_D800; // from MCXA Reference Manual.
-    unsafe {
-        let ptr = ROM_API_BASE as *const RomApiRaw;
-        RomApi::from_raw(&*ptr)
-    }
-}
-
-pub fn bootloader_tree() -> BootloaderTree {
-    rom_api()
 }
 
 // runBootloader API fields (Table 31)
@@ -178,76 +156,6 @@ enum RunBootRecoveryBootCfg0 {
     SpiNorChipSelect1 = 0x1 << 4,
     SpiNorChipSelect2 = 0x2 << 4,
     SpiNorChipSelect3 = 0x3 << 4,
-}
-
-/// Helper function to invoke the ROM API's run_bootloader function with the appropriate argument to enter ISP mode over UART. This can be used as a fallback if the main bootloader fails and we want to recover by flashing over UART using NXP's ISP tools.
-/// The function will not return since the bootloader will take over execution after this call, but we still include an infinite loop after the call to satisfy the Rust type system since the function is declared to return ! (never).
-pub fn run_bootloader_uart() -> ! {
-    // Build arg: tag 0xEB, mode ISP(1), interface UART(1)
-    let arg: u32 = RunBootTag::EnterBoot as u32 | RunBootMode::IspBoot as u32 | RunBootIspInterface::Uart as u32;
-    bootloader_tree().run_bootloader(&arg as *const u32);
-    loop {
-        core::hint::spin_loop()
-    }
-}
-
-/// Helper function to get a pointer to the flash driver API from the ROM API tree.
-pub fn flash_driver() -> FlashDriver {
-    // Match NXP usage: g_bootloaderTree->flashDriver->...
-    // The bootloader tree stores a direct pointer to the flash driver interface.
-    bootloader_tree().flash_api()
-}
-
-/// Helper function to get a pointer to the nboot API from the ROM API tree.
-pub fn nboot() -> NbootDriver {
-    // Match NXP usage: g_bootloaderTree->nbootDriver->...
-    bootloader_tree().nboot_api()
-}
-
-/// Helper function to get a pointer to the KB driver API from the ROM API tree.
-pub fn kb() -> KBApiDriver {
-    bootloader_tree().kb_api()
-}
-
-/// Helper function to get a pointer to the FlexSPI NOR flash driver API from the ROM API tree.
-pub fn flexspi_nor() -> FlexspiNorFlashDriver {
-    bootloader_tree().flex_spi_api()
-}
-
-/// Helper function to get a pointer to the SPI flash driver API from the ROM API tree.
-pub fn spi_flash() -> SpiFlashDriver {
-    bootloader_tree().spi_flash_api()
-}
-
-/// Used to get the default FlashConfig struct to be inited by flash_init().
-pub fn flash_cfg_for_rom_api() -> FlashConfig {
-    FlashConfig {
-        pflash_block_base: 0,
-        pflash_total_size: 0,
-        pflash_block_count: 0,
-        pflash_page_size: 0,
-        pflash_sector_size: 0,
-        ffr_config: FlashFfrConfig {
-            ffr_block_base: 0,
-            ffr_total_size: 0,
-            ffr_page_size: 0,
-            sector_size: 0,
-            cfpa_page_version: 0,
-            cfpa_page_offset: 0,
-        },
-        mode_config: FlashModeConfig::new(
-            0,
-            FlashReadSingleWordConfig::new(
-                FlashReadEccOption::On,
-                FlashReadMarginOption::Normal,
-                FlashReadDmaccOption::Disabled,
-            ),
-            FlashSetWriteModeConfig::new(FlashRampControlOption::Reserved, FlashRampControlOption::Reserved),
-            FlashSetReadModeConfig::new(0, 0, 0),
-        ),
-        nboot_ctx: core::ptr::null_mut(),
-        use_ahb_read: true,
-    }
 }
 
 const KSTATUS_SUCCESS: u32 = 0;
