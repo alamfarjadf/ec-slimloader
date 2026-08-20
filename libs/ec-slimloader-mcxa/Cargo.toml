@@ -23,12 +23,9 @@ embassy-mcxa = { workspace = true, features = ["rt", "unstable-pac"] }
 embedded-storage-async = { workspace = true }
 
 [features]
-default = ["mcxa5xx", "verification-logging", "certificate-logging"]
+default = ["mcxa5xx"]
 defmt = ["dep:defmt", "defmt-or-log/defmt", "ec-slimloader/defmt"]
 log = ["dep:log", "defmt-or-log/log", "ec-slimloader/log"]
-certificate-logging = []
-verification-logging = []
-flexspi-selftest = []
 mcxa2xx = ["embassy-mcxa/mcxa2xx"]
 mcxa5xx = ["embassy-mcxa/mcxa5xx"]
 # Use this when targeting the FRDM-MCXA577 EVK (flash on FlexSPI Port A).

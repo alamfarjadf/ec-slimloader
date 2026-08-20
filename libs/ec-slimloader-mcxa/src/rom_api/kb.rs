@@ -1,9 +1,8 @@
-#![allow(clippy::not_unsafe_ptr_arg_deref)]
-// Safety: null, misaligned, invalid inputs or out of bounds references will cause ROM API to return an error code, which is handled by the caller.
 use core::ffi::c_void;
 
+use ec_slimloader::BootError;
+
 use super::Status;
-use crate::error::KbStatus;
 
 // KBoot (KB) ROM API
 
@@ -117,14 +116,63 @@ impl KBApiDriver {
     }
 
     pub fn kb_init(&self, session: *mut *mut KbSessionRef, options: *const KbOptions) -> KbStatus {
-        unsafe { KbStatus::from_raw((self.raw.kb_init)(session, options)) }
+        unsafe { (self.raw.kb_init)(session, options) }.into()
     }
 
     pub fn kb_deinit(&self, session: *mut KbSessionRef) -> KbStatus {
-        unsafe { KbStatus::from_raw((self.raw.kb_deinit)(session)) }
+        unsafe { (self.raw.kb_deinit)(session) }.into()
     }
 
     pub fn kb_execute(&self, session: *mut KbSessionRef, data: *const u8, dataLength: u32) -> KbStatus {
-        unsafe { KbStatus::from_raw((self.raw.kb_execute)(session, data, dataLength)) }
+        unsafe { (self.raw.kb_execute)(session, data, dataLength) }.into()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KbStatus {
+    Success,
+    Fail,
+    InvalidArgument,
+    RomLdrDataUnderrun,
+    RomLdrJumpReturned,
+    RomLdrRollbackBlocked,
+    RomLdrPendingJumpCommand,
+    RomApiBufferSizeNotEnough,
+    RomApiInvalidBuffer,
+    Unknown(u32),
+}
+
+impl From<u32> for KbStatus {
+    fn from(raw: u32) -> Self {
+        match raw {
+            super::KSTATUS_KB_SUCCESS => Self::Success,
+            super::KSTATUS_KB_FAIL => Self::Fail,
+            super::KSTATUS_KB_INVALID_ARGUMENT => Self::InvalidArgument,
+            super::KSTATUS_KB_ROMLDR_DATA_UNDERRUN => Self::RomLdrDataUnderrun,
+            super::KSTATUS_KB_ROMLDR_JUMP_RETURNED => Self::RomLdrJumpReturned,
+            super::KSTATUS_KB_ROMLDR_ROLLBACK_BLOCKED => Self::RomLdrRollbackBlocked,
+            super::KSTATUS_KB_ROMLDR_PENDING_JUMP_COMMAND => Self::RomLdrPendingJumpCommand,
+            super::KSTATUS_KB_BUFFER_SIZE_NOT_ENOUGH => Self::RomApiBufferSizeNotEnough,
+            super::KSTATUS_KB_INVALID_BUFFER => Self::RomApiInvalidBuffer,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+impl From<KbStatus> for BootError {
+    fn from(status: KbStatus) -> Self {
+        match status {
+            KbStatus::InvalidArgument | KbStatus::RomApiBufferSizeNotEnough | KbStatus::RomApiInvalidBuffer => {
+                BootError::Markers
+            }
+            KbStatus::Fail => BootError::IO,
+            KbStatus::RomLdrRollbackBlocked => BootError::Markers,
+            // Data underrun / pending-jump are usually flow control for streaming loaders,
+            // but if surfaced as an error, treat as I/O.
+            KbStatus::RomLdrDataUnderrun | KbStatus::RomLdrJumpReturned | KbStatus::RomLdrPendingJumpCommand => {
+                BootError::IO
+            }
+            _ => BootError::IO,
+        }
     }
 }

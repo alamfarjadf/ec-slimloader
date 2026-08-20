@@ -1,7 +1,6 @@
-#![allow(clippy::not_unsafe_ptr_arg_deref)]
-// Safety: null, misaligned, invalid inputs or out of bounds references will cause ROM API to return an error code, which is handled by the caller.
+use ec_slimloader::BootError;
+
 use super::{StandardVersion, Status};
-use crate::error::FlashStatus;
 
 #[repr(C)]
 pub struct FlashFfrConfig {
@@ -58,7 +57,6 @@ pub struct FlashReadSingleWordConfig {
 }
 
 impl FlashReadSingleWordConfig {
-    #[inline(always)]
     pub const fn new(ecc: FlashReadEccOption, margin: FlashReadMarginOption, dmacc: FlashReadDmaccOption) -> Self {
         Self {
             packed_options: (ecc as u8) | ((margin as u8) << 1) | ((dmacc as u8) << 3),
@@ -75,7 +73,6 @@ pub struct FlashSetWriteModeConfig {
 }
 
 impl FlashSetWriteModeConfig {
-    #[inline(always)]
     pub const fn new(program: FlashRampControlOption, erase: FlashRampControlOption) -> Self {
         Self {
             program_ramp_control: program as u8,
@@ -94,7 +91,6 @@ pub struct FlashSetReadModeConfig {
 }
 
 impl FlashSetReadModeConfig {
-    #[inline(always)]
     pub const fn new(read_interface_timing_trim: u16, read_controller_timing_trim: u16, read_wait_states: u8) -> Self {
         Self {
             read_interface_timing_trim,
@@ -114,7 +110,6 @@ pub struct FlashModeConfig {
 }
 
 impl FlashModeConfig {
-    #[inline(always)]
     pub const fn new(
         sys_freq_in_m_hz: u32,
         read_single_word: FlashReadSingleWordConfig,
@@ -233,7 +228,7 @@ impl FlashDriver {
     }
 
     pub fn flash_init(&self, config: *mut FlashConfig) -> FlashStatus {
-        unsafe { FlashStatus::from_raw((self.raw.flash_init)(config)) }
+        unsafe { (self.raw.flash_init)(config) }.into()
     }
 
     pub fn flash_erase_sector(
@@ -243,7 +238,7 @@ impl FlashDriver {
         length_in_bytes: u32,
         key: u32,
     ) -> FlashStatus {
-        unsafe { FlashStatus::from_raw((self.raw.flash_erase_sector)(config, start, length_in_bytes, key)) }
+        unsafe { (self.raw.flash_erase_sector)(config, start, length_in_bytes, key) }.into()
     }
 
     pub fn flash_program_phrase(
@@ -253,7 +248,7 @@ impl FlashDriver {
         src: *const u8,
         length_in_bytes: u32,
     ) -> FlashStatus {
-        unsafe { FlashStatus::from_raw((self.raw.flash_program_phrase)(config, start, src, length_in_bytes)) }
+        unsafe { (self.raw.flash_program_phrase)(config, start, src, length_in_bytes) }.into()
     }
 
     pub fn flash_program_page(
@@ -263,7 +258,7 @@ impl FlashDriver {
         src: *const u8,
         length_in_bytes: u32,
     ) -> FlashStatus {
-        unsafe { FlashStatus::from_raw((self.raw.flash_program_page)(config, start, src, length_in_bytes)) }
+        unsafe { (self.raw.flash_program_page)(config, start, src, length_in_bytes) }.into()
     }
 
     pub fn flash_verify_program(
@@ -276,27 +271,28 @@ impl FlashDriver {
         failed_data: *mut u32,
     ) -> FlashStatus {
         unsafe {
-            FlashStatus::from_raw((self.raw.flash_verify_program)(
+            (self.raw.flash_verify_program)(
                 config,
                 start,
                 length_in_bytes,
                 expected_data,
                 failed_address,
                 failed_data,
-            ))
+            )
         }
+        .into()
     }
 
     pub fn flash_verify_erase_phrase(&self, config: *mut FlashConfig, start: u32, length_in_bytes: u32) -> FlashStatus {
-        unsafe { FlashStatus::from_raw((self.raw.flash_verify_erase_phrase)(config, start, length_in_bytes)) }
+        unsafe { (self.raw.flash_verify_erase_phrase)(config, start, length_in_bytes) }.into()
     }
 
     pub fn flash_verify_erase_page(&self, config: *mut FlashConfig, start: u32, length_in_bytes: u32) -> FlashStatus {
-        unsafe { FlashStatus::from_raw((self.raw.flash_verify_erase_page)(config, start, length_in_bytes)) }
+        unsafe { (self.raw.flash_verify_erase_page)(config, start, length_in_bytes) }.into()
     }
 
     pub fn flash_verify_erase_sector(&self, config: *mut FlashConfig, start: u32, length_in_bytes: u32) -> FlashStatus {
-        unsafe { FlashStatus::from_raw((self.raw.flash_verify_erase_sector)(config, start, length_in_bytes)) }
+        unsafe { (self.raw.flash_verify_erase_sector)(config, start, length_in_bytes) }.into()
     }
 
     pub fn flash_get_property(
@@ -305,26 +301,90 @@ impl FlashDriver {
         which_property: FlashPropertyTag,
         value: *mut u32,
     ) -> FlashStatus {
-        unsafe { FlashStatus::from_raw((self.raw.flash_get_property)(config, which_property as u32, value)) }
+        unsafe { (self.raw.flash_get_property)(config, which_property as u32, value) }.into()
     }
 
     pub fn ifr_verify_erase_phrase(&self, config: *mut FlashConfig, start: u32, length_in_bytes: u32) -> FlashStatus {
-        unsafe { FlashStatus::from_raw((self.raw.ifr_verify_erase_phrase)(config, start, length_in_bytes)) }
+        unsafe { (self.raw.ifr_verify_erase_phrase)(config, start, length_in_bytes) }.into()
     }
 
     pub fn ifr_verify_erase_page(&self, config: *mut FlashConfig, start: u32, length_in_bytes: u32) -> FlashStatus {
-        unsafe { FlashStatus::from_raw((self.raw.ifr_verify_erase_page)(config, start, length_in_bytes)) }
+        unsafe { (self.raw.ifr_verify_erase_page)(config, start, length_in_bytes) }.into()
     }
 
     pub fn ifr_verify_erase_sector(&self, config: *mut FlashConfig, start: u32, length_in_bytes: u32) -> FlashStatus {
-        unsafe { FlashStatus::from_raw((self.raw.ifr_verify_erase_sector)(config, start, length_in_bytes)) }
+        unsafe { (self.raw.ifr_verify_erase_sector)(config, start, length_in_bytes) }.into()
     }
 
     pub fn flash_read(&self, config: *mut FlashConfig, start: u32, dest: *mut u8, length_in_bytes: u32) -> FlashStatus {
-        unsafe { FlashStatus::from_raw((self.raw.flash_read)(config, start, dest, length_in_bytes)) }
+        unsafe { (self.raw.flash_read)(config, start, dest, length_in_bytes) }.into()
     }
 
     pub fn version(&self) -> StandardVersion {
         self.raw.version
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum FlashStatus {
+    Success,
+    InvalidArgument,
+    AlignmentError,
+    AddressError,
+    SizeError,
+    CommandFailure,
+    UnknownProperty,
+    EraseKeyError,
+    RegionExecuteOnly,
+    CommandNotSupported,
+    ReadOnlyProperty,
+    InvalidPropertyValue,
+    EccError,
+    CompareError,
+    InvalidWaitStateCycles,
+    Unknown(u32),
+}
+
+impl From<u32> for FlashStatus {
+    fn from(raw: u32) -> Self {
+        match raw {
+            super::KSTATUS_FLASH_SUCCESS => Self::Success,
+            super::KSTATUS_FLASH_INVALID_ARGUMENT => Self::InvalidArgument,
+            super::KSTATUS_FLASH_ALIGNMENT_ERROR => Self::AlignmentError,
+            super::KSTATUS_FLASH_ADDRESS_ERROR => Self::AddressError,
+            super::KSTATUS_FLASH_SIZE_ERROR => Self::SizeError,
+            super::KSTATUS_FLASH_COMMAND_FAILURE => Self::CommandFailure,
+            super::KSTATUS_FLASH_UNKNOWN_PROPERTY => Self::UnknownProperty,
+            super::KSTATUS_FLASH_ERASE_KEY_ERROR => Self::EraseKeyError,
+            super::KSTATUS_FLASH_REGION_EXECUTE_ONLY => Self::RegionExecuteOnly,
+            super::KSTATUS_FLASH_COMMAND_NOT_SUPPORTED => Self::CommandNotSupported,
+            super::KSTATUS_FLASH_READ_ONLY_PROPERTY => Self::ReadOnlyProperty,
+            super::KSTATUS_FLASH_INVALID_PROPERTY_VALUE => Self::InvalidPropertyValue,
+            super::KSTATUS_FLASH_ECC_ERROR => Self::EccError,
+            super::KSTATUS_FLASH_COMPARE_ERROR => Self::CompareError,
+            super::KSTATUS_FLASH_INVALID_WAIT_STATE_CYCLES => Self::InvalidWaitStateCycles,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+impl From<FlashStatus> for BootError {
+    fn from(status: FlashStatus) -> BootError {
+        match status {
+            FlashStatus::InvalidArgument
+            | FlashStatus::AlignmentError
+            | FlashStatus::AddressError
+            | FlashStatus::SizeError
+            | FlashStatus::RegionExecuteOnly
+            | FlashStatus::ReadOnlyProperty => BootError::MemoryRegion,
+            FlashStatus::EccError | FlashStatus::CompareError | FlashStatus::CommandFailure => BootError::Integrity,
+            FlashStatus::EraseKeyError
+            | FlashStatus::UnknownProperty
+            | FlashStatus::CommandNotSupported
+            | FlashStatus::InvalidPropertyValue
+            | FlashStatus::InvalidWaitStateCycles => BootError::Markers,
+            _ => BootError::IO,
+        }
     }
 }

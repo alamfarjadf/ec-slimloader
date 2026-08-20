@@ -1,9 +1,8 @@
-#![allow(clippy::not_unsafe_ptr_arg_deref)]
-// Safety: null, misaligned, invalid inputs or out of bounds references will cause ROM API to return an error code, which is handled by the caller.
 use core::ffi::c_void;
 
+use ec_slimloader::BootError;
+
 use super::Status;
-use crate::error::SpiFlashStatus;
 
 // LPSPI external flash (SPI NOR/EEPROM) ROM API
 
@@ -62,5 +61,29 @@ impl SpiFlashDriver {
 
     pub fn spi_eeprom_erase_all(&self) -> SpiFlashStatus {
         unsafe { SpiFlashStatus::from_raw((self.raw.spi_eeprom_erase_all)()) }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpiFlashStatus {
+    Success,
+    Fail,
+    Unknown(u32),
+}
+
+impl SpiFlashStatus {
+    pub const fn from_raw(raw: u32) -> Self {
+        match raw {
+            super::KSTATUS_SPIFLASH_SUCCESS => Self::Success,
+            super::KSTATUS_SPIFLASH_FAIL => Self::Fail,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+pub fn map_spiflash_status_to_boot_error(status: SpiFlashStatus) -> BootError {
+    match status {
+        SpiFlashStatus::Fail => BootError::IO,
+        _ => BootError::IO,
     }
 }

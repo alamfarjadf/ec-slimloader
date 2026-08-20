@@ -2,21 +2,18 @@ use core::convert::Infallible;
 use core::{mem, ptr};
 
 use defmt_or_log::error;
-use ec_slimloader_mcxa::certificate::derive_image_rkth_pair;
-pub use ec_slimloader_mcxa::error::FlashStatus;
-use ec_slimloader_mcxa::header::ImageHeader;
 pub use ec_slimloader_mcxa::lifecycle::{
     cmpa_header_marker_is_valid, cnsa_enforced, fast_boot_enabled, hybrid_secure_boot_enforced, is_cfpa_erased,
     is_cmpa_erased, load_cfpa_header_word, load_lifecycle_from_cfpa, load_pqc_rotkh_from_cmpa, load_rotkh_from_cmpa,
     low_power_authentication_enforced, CmpaUpdateConfigData, CnsaLevel, IFRConfigAreaBase, IFRPage, LpWakePolicy,
     SecureBootLevel, XipImageProtect,
 };
+use ec_slimloader_mcxa::rom_api::FlashStatus;
 pub use ec_slimloader_mcxa::rom_api::{
     flash_cfg_for_rom_api, flash_driver, ActualLifecycleState, Bricked, CanAdvanceTo, Develop, Develop2,
     FailureAnalysis, FlashConfig, InField, InFieldLocked, NbootLifecycleState, NbootRootKeyUsage, OemFieldReturn,
     FLASH_API_ERASE_KEY,
 };
-use embassy_mcxa::{peripherals, Peri};
 
 /// Token produced by `verify_lifecycle_transition()'. Carries the verified target
 /// `NbootLifecycleState` at runtime. The type parameter `Next` is compile-time
@@ -67,7 +64,6 @@ enum IFRWriteGeometry {
 }
 
 impl IFRWriteGeometry {
-    #[inline(always)]
     const fn as_usize(self) -> usize {
         match self {
             Self::FlashPhraseBytes => 16,
@@ -77,7 +73,6 @@ impl IFRWriteGeometry {
         }
     }
 
-    #[inline(always)]
     const fn as_u32(self) -> u32 {
         self.as_usize() as u32
     }
@@ -112,7 +107,6 @@ enum CfpaWriteField {
 //TODO: account for all the Monotonic counter words in CFPA so that they are tracked and +1'd, otherwise ROM will silently reject the update. The page version is the only one we currently
 // track since it's the only one we read-modify-write; the rest are currently unused and left at 0.
 impl CfpaWriteField {
-    #[inline(always)]
     const fn byte_offset(self) -> usize {
         match self {
             Self::DevcfgUpdType => 0x0000,
@@ -183,8 +177,6 @@ fn build_cfpa_page_for_cmpa_update() -> Result<[u8; IFRPage::Cfpa.byte_len()], C
 
     Ok(cfpa_page)
 }
-
-#[inline(always)]
 fn initialize_cmpa_page_for_first_write(cmpa_page: &mut [u8]) {
     cmpa_page.fill(0);
 
@@ -1345,7 +1337,6 @@ pub enum CmpaField {
 }
 
 impl CmpaField {
-    #[inline(always)]
     pub const fn byte_offset(self) -> usize {
         match self {
             Self::BootTimers => 0x0C,
@@ -1400,7 +1391,6 @@ impl CmpaField {
         }
     }
 
-    #[inline(always)]
     pub const fn byte_range(self) -> core::ops::Range<usize> {
         self.byte_offset()..(self.byte_offset() + mem::size_of::<u32>())
     }
@@ -1472,7 +1462,6 @@ pub fn set_ifr_initial_config_and_reset() -> Result<Infallible, CmpaWriteError> 
 /// if configured by input 'starting_addresses' to do so. The first address must be the Secure Boot Loader (SBL) image, which is expected to be the first image in internal flash at 0x0. The caller must ensure that the SBL and application(s)
 // are signed and present in flash and that the correct ROTKH set is provided as inputs before calling this function, otherwise hashes and secure boot will not be provisioned.
 pub fn configure_rotkh_and_enable_secure_boot_policies_and_reset(
-    mut peri: Peri<'_, peripherals::SGI0>,
     starting_addresses: &[u32],
     rotkh: &[u32; 12],
     pqc_rotkh: &[u32; 12],
@@ -1495,33 +1484,6 @@ pub fn configure_rotkh_and_enable_secure_boot_policies_and_reset(
     let rotkh_bytes = unsafe { core::slice::from_raw_parts(rotkh.as_ptr() as *const u8, 48) }; // Little endian representation of the 12 u32 words (4 bytes each) = 48 bytes
     let pqc_rotkh_bytes = unsafe { core::slice::from_raw_parts(pqc_rotkh.as_ptr() as *const u8, 48) };
 
-    const MAX_PROVISIONED_IMAGE_SIZE: u32 = 2 * 1024 * 1024; // Max 2MB flash.
-
-    for &starting_address in starting_addresses {
-        let image_base = starting_address as *const u8;
-        let image_header = unsafe { ImageHeader::from_ptr(image_base, MAX_PROVISIONED_IMAGE_SIZE) }
-            .map_err(|_| CmpaWriteError::InvalidImageSlot)?;
-        let (image_ecdsa_rkth, image_pqc_rkth) = derive_image_rkth_pair(
-            peri.reborrow(),
-            image_base,
-            image_header.extended_header_offset(),
-            image_header.image_length(),
-        );
-        if let Some(image_ecdsa_rkth) = image_ecdsa_rkth {
-            if image_ecdsa_rkth.as_bytes() != rotkh_bytes {
-                return Err(CmpaWriteError::RotkhMismatch);
-            }
-        } else {
-            return Err(CmpaWriteError::HashError);
-        }
-        if let Some(image_pqc_rkth) = image_pqc_rkth {
-            if image_pqc_rkth.as_bytes() != pqc_rotkh_bytes {
-                return Err(CmpaWriteError::RotkhMismatch);
-            }
-        } else {
-            return Err(CmpaWriteError::HashError);
-        }
-    }
     cmpa_page[CmpaUpdateConfigData::Rotkh.byte_range()].copy_from_slice(rotkh_bytes);
     cmpa_page[CmpaUpdateConfigData::PqcRotkh.byte_range()].copy_from_slice(pqc_rotkh_bytes);
 

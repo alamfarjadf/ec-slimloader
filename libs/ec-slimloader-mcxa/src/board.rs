@@ -10,7 +10,6 @@
 
 use core::ops::Range;
 
-use crate::{header, jump, verification};
 use ec_slimloader::{Board, BootError, BootStatePolicy};
 use ec_slimloader_state::flash::FlashJournal;
 use ec_slimloader_state::state::{Slot, Status};
@@ -20,14 +19,9 @@ use heapless::Vec;
 use partition_manager::{Partition, PartitionManager, RO, RW};
 use static_cell::StaticCell;
 
-macro_rules! board_info {
-    ($($arg:tt)*) => {
-        #[cfg(feature = "verification-logging")]
-        {
-            defmt_or_log::info!($($arg)*);
-        }
-    };
-}
+use crate::lifecycle::load_lifecycle_from_cfpa;
+use crate::rom_api::NbootLifecycleState;
+use crate::{jump, verification};
 
 /// External flash total size (2 MB).
 const EXTERNAL_FLASH_SIZE: usize = 0x0020_0000;
@@ -69,8 +63,6 @@ use embassy_mcxa::flexspi::lookup::opcodes::sdr::{CMD, RADDR, READ, WRITE};
 use embassy_mcxa::flexspi::lookup::{Command, Instr, LookupTable, Pads, SequenceBuilder};
 #[cfg(all(target_os = "none", feature = "mcxa5xx"))]
 use embassy_mcxa::flexspi::{Blocking, ClockConfig, FlashConfig, Flexspi, NorFlash as FlexspiNor};
-#[cfg(all(target_os = "none", feature = "mcxa5xx"))]
-use embassy_mcxa::{peripherals, Peri};
 
 /// Single-lane (1-bit SPI) LUT + geometry for the Macronix MX25U.
 /// Port A (EVK, `mcxa5xxevk` feature): flash starts at SFAR=0, use actual size.
@@ -342,8 +334,6 @@ pub struct Mcxa<C: McxaConfig> {
     journal: FlashJournal<StatePartition>,
     slots: Vec<SlotPartition, MAX_SLOT_COUNT>,
     _config: C,
-    #[cfg(all(target_os = "none", feature = "mcxa5xx"))]
-    sgi: Peri<'static, peripherals::SGI0>,
 }
 
 /// Erased NOR flash reads as `0xFFFF_FFFF`, which fails both checks, so an empty
@@ -373,7 +363,7 @@ impl<C: McxaConfig + BootStatePolicy> Board for Mcxa<C> {
 
     #[allow(clippy::panic)]
     async fn init<const JOURNAL_BUFFER_SIZE: usize>(config: Self::Config) -> Self {
-        board_info!("Initializing MCXA slimloader backend");
+        defmt_or_log::info!("Initializing MCXA slimloader backend");
 
         static EXT_FLASH: StaticCell<PartitionManager<ExternalStorage, NoopRawMutex>> = StaticCell::new();
 
@@ -428,9 +418,6 @@ impl<C: McxaConfig + BootStatePolicy> Board for Mcxa<C> {
 
             embassy_mcxa::init(bl_cfg)
         };
-
-        #[cfg(all(target_os = "none", feature = "mcxa5xx"))]
-        let sgi = p.SGI0;
 
         #[cfg(all(target_os = "none", feature = "mcxa5xx"))]
         let external = {
@@ -495,33 +482,6 @@ impl<C: McxaConfig + BootStatePolicy> Board for Mcxa<C> {
         #[cfg(not(all(target_os = "none", feature = "mcxa5xx")))]
         let external = ExternalStorage::init();
 
-        // FlexSPI external-flash READ probe (read-only, modifies nothing): dumps
-        // the JEDEC id + boot-journal bytes so you can compare the journal
-        // before/after an external write done by another tool (e.g. SurfDbg
-        // 0xFF'ing the journal). If the bytes change, that tool really wrote to
-        // external flash; if they don't, it didn't.
-        #[cfg(all(target_os = "none", feature = "mcxa5xx", feature = "flexspi-selftest"))]
-        let external =
-            {
-                let mut external = external;
-                use embassy_mcxa::pac;
-                // JEDEC/vendor id: proves the MCU can actually reach the external NOR.
-                flexspi_ip_command(0, Command::ReadId as u8, 3);
-                let jedec = pac::FLEXSPI0.rfdr(0).read().rxdata();
-                board_info!(
-                    "flexspi-probe: JEDEC id = {:#010x} (MX25U low byte should be 0xc2)",
-                    jedec
-                );
-                // Boot-journal bytes at external offset 0x1000 (read-only).
-                let mut j = [0u8; 16];
-                let _ = external.read(0x1000, &mut j).await;
-                board_info!(
-                "flexspi-probe: journal @0x1000 = [{:#04x} {:#04x} {:#04x} {:#04x} {:#04x} {:#04x} {:#04x} {:#04x}]",
-                j[0], j[1], j[2], j[3], j[4], j[5], j[6], j[7]
-            );
-                external
-            };
-
         let ext_flash_manager = EXT_FLASH.init_with(|| PartitionManager::new(external));
 
         let Partitions { state, slots } = config.partitions(ext_flash_manager);
@@ -540,12 +500,10 @@ impl<C: McxaConfig + BootStatePolicy> Board for Mcxa<C> {
                 let initial_state = ec_slimloader_state::state::State::new(Status::Confirmed, Slot::S1, Slot::S0);
                 match journal.set::<JOURNAL_BUFFER_SIZE>(&initial_state).await {
                     Ok(()) => {
-                        #[cfg(feature = "verification-logging")]
-                        board_info!("Initialized boot journal: target=S1 backup=S0");
+                        defmt_or_log::info!("Initialized boot journal: target=S1 backup=S0");
                     }
                     Err(_e) => {
-                        #[cfg(feature = "verification-logging")]
-                        board_info!("Boot-journal initialization write failed");
+                        defmt_or_log::info!("Boot-journal initialization write failed");
                     }
                 }
             }
@@ -555,8 +513,6 @@ impl<C: McxaConfig + BootStatePolicy> Board for Mcxa<C> {
             journal,
             slots,
             _config: config,
-            #[cfg(all(target_os = "none", feature = "mcxa5xx"))]
-            sgi,
         }
     }
 
@@ -578,26 +534,19 @@ impl<C: McxaConfig + BootStatePolicy> Board for Mcxa<C> {
             return BootError::Markers;
         }
 
-        const SLOT_SIZE: u32 = 0x000F_8000; // 992 KB
-        let image_base = app_base as *const u8;
-        let jump_address = image_base as *const u32;
-        let image_header = match unsafe { header::ImageHeader::from_ptr(image_base, SLOT_SIZE) } {
-            Ok(header) => header,
-            Err(_) => return ec_slimloader::BootError::Markers,
-        };
+        // TODO: Below needs some fault-injection protection or it's too easy to skip some checks and skip verification
 
-        let image_len = image_header.image_length();
-        let cert_offset = image_header.cert_block_offset();
-        if !(0x40..=SLOT_SIZE).contains(&image_len) || (cert_offset & 0x3) != 0 || cert_offset >= image_len {
-            return ec_slimloader::BootError::Markers;
+        let provisioning_mode = load_lifecycle_from_cfpa()
+            .map(|lifecycle| lifecycle == NbootLifecycleState::Develop)
+            .unwrap_or(false);
+
+        if !provisioning_mode {
+            if let Err(e) = verification::verify_authenticity(app_base as _) {
+                return e;
+            }
         }
 
-        match verification::verify_authenticity(self.sgi.reborrow(), image_base) {
-            Ok(()) => unsafe {
-                jump::jump_to_image(jump_address);
-            },
-            Err(error) => error,
-        }
+        unsafe { jump::jump_to_image(app_base as _) }
     }
 
     fn abort(&mut self) -> ! {
